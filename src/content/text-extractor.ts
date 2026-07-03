@@ -1,106 +1,115 @@
 export interface TextBlock {
   id: string
-  nodes: Text[]
   text: string
-  originalHtml: string
   parentElement: HTMLElement
 }
 
 let blockIdCounter = 0
 
+/** Tags whose content we want to translate as a unit. */
+const BLOCK_TAGS = new Set([
+  'p', 'div', 'li', 'td', 'th', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+  'blockquote', 'dd', 'dt', 'figcaption', 'caption',
+])
+
+/** Tags we climb past to find a block-level container. */
+const INLINE_TAGS = new Set([
+  'b', 'i', 'u', 'strong', 'em', 'a', 'span', 'code', 'pre', 'kbd',
+  'samp', 'sub', 'sup', 'small', 'mark', 'q', 'cite', 'abbr', 'time',
+  'font', 'label',
+])
+
+/** Tags whose content should never be translated. */
+const SKIP_TAGS = new Set([
+  'script', 'style', 'noscript', 'code', 'pre', 'svg', 'canvas', 'math',
+])
+
+/**
+ * Walk the DOM and extract translatable text blocks.
+ *
+ * Instead of creating one block per text node, we climb to the nearest
+ * block-level ancestor and merge ALL text from that container into a
+ * single block. This avoids fragmenting inline elements (b, a, code…)
+ * into separate blocks and prevents the "disappearing original" problem.
+ */
 export function extractTextBlocks(root: HTMLElement): TextBlock[] {
-  const blocks: TextBlock[] = []
-  const walker = document.createTreeWalker(
-    root,
-    NodeFilter.SHOW_TEXT,
-    {
-      acceptNode(node) {
-        const parent = node.parentElement
-        if (!parent) return NodeFilter.FILTER_REJECT
+  const textNodes: { node: Text; container: HTMLElement }[] = []
 
-        // Skip hidden/invisible elements
-        if (isHiddenElement(parent)) return NodeFilter.FILTER_REJECT
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      const parent = node.parentElement
+      if (!parent) return NodeFilter.FILTER_REJECT
 
-        // Skip script, style, noscript, code, pre, svg
-        const tag = parent.tagName.toLowerCase()
-        const skipTags = ['script', 'style', 'noscript', 'code', 'pre', 'svg', 'canvas', 'math']
-        if (skipTags.includes(tag)) return NodeFilter.FILTER_REJECT
+      // Skip hidden / invisible
+      if (isHiddenElement(parent)) return NodeFilter.FILTER_REJECT
 
-        // Skip already translated blocks
-        if (parent.closest('.bilingual-translation-wrapper')) return NodeFilter.FILTER_REJECT
+      // Skip tags we never translate
+      const tag = parent.tagName.toLowerCase()
+      if (SKIP_TAGS.has(tag)) return NodeFilter.FILTER_REJECT
 
-        // Skip empty text
-        const text = node.textContent?.trim()
-        if (!text || text.length < 2) return NodeFilter.FILTER_REJECT
+      // Skip already-translated blocks
+      if (parent.closest('.bilingual-translation-wrapper')) return NodeFilter.FILTER_REJECT
 
-        // Skip pure whitespace/punctuation
-        if (/^[\s.,!?;:\-–—()\[\]{}'""'']+$/.test(text)) return NodeFilter.FILTER_REJECT
+      // Skip empty / whitespace-only
+      const text = node.textContent?.trim()
+      if (!text || text.length < 2) return NodeFilter.FILTER_REJECT
+      if (/^[\s.,!?;:\-–—()\[\]{}'""'']+$/.test(text)) return NodeFilter.FILTER_REJECT
 
-        // Skip elements that are likely navigation/menus
-        if (parent.tagName === 'A' && parent.getAttribute('href')?.startsWith('#')) {
-          return NodeFilter.FILTER_REJECT
-        }
-
-        return NodeFilter.FILTER_ACCEPT
-      },
-    }
-  )
-
-  // Group text nodes by block-level parent
-  let currentBlock: TextBlock | null = null
+      return NodeFilter.FILTER_ACCEPT
+    },
+  })
 
   while (walker.nextNode()) {
     const node = walker.currentNode as Text
     const parent = node.parentElement!
 
-    if (currentBlock && currentBlock.parentElement === parent) {
-      // Same block — collect adjacent text nodes
-      const lastNode = currentBlock.nodes[currentBlock.nodes.length - 1]
-      if (isAdjacentSibling(lastNode, node)) {
-        currentBlock.nodes.push(node)
-        currentBlock.text += node.textContent || ''
-        currentBlock.originalHtml += node.textContent || ''
-      } else {
-        // Different text segment under same parent — treat as new block
-        if (currentBlock.text.trim()) {
-          blocks.push(currentBlock)
-        }
-        currentBlock = createBlock(node, parent)
-      }
-    } else {
-      // New parent — finish old block, start new
-      if (currentBlock && currentBlock.text.trim()) {
-        blocks.push(currentBlock)
-      }
-      currentBlock = createBlock(node, parent)
-    }
+    // Climb to the nearest block-level container
+    const container = findBlockContainer(parent)
+    if (!container) continue
+
+    textNodes.push({ node, container })
   }
 
-  // Push last block
-  if (currentBlock && currentBlock.text.trim()) {
-    blocks.push(currentBlock)
+  // Group by container element
+  const containerMap = new Map<HTMLElement, string>()
+  for (const { node, container } of textNodes) {
+    const existing = containerMap.get(container) || ''
+    containerMap.set(container, existing + (node.textContent || ''))
+  }
+
+  // Build TextBlocks, deduplicating by text content
+  const seenTexts = new Set<string>()
+  const blocks: TextBlock[] = []
+
+  for (const [container, text] of containerMap) {
+    const trimmed = text.trim()
+    if (!trimmed) continue
+    // Deduplicate identical text
+    if (seenTexts.has(trimmed)) continue
+    seenTexts.add(trimmed)
+
+    blocks.push({
+      id: `block_${++blockIdCounter}`,
+      text: trimmed,
+      parentElement: container,
+    })
   }
 
   return blocks
 }
 
-function createBlock(node: Text, parent: HTMLElement): TextBlock {
-  return {
-    id: `block_${++blockIdCounter}`,
-    nodes: [node],
-    text: node.textContent || '',
-    originalHtml: node.textContent || '',
-    parentElement: parent,
+/**
+ * Walk up from an inline element to find the nearest block-level container.
+ */
+function findBlockContainer(el: HTMLElement): HTMLElement | null {
+  let current: HTMLElement | null = el
+  while (current && current !== document.body) {
+    const tag = current.tagName.toLowerCase()
+    if (BLOCK_TAGS.has(tag)) return current
+    if (!INLINE_TAGS.has(tag)) return current // treat unknown tags as block
+    current = current.parentElement
   }
-}
-
-function isAdjacentSibling(a: Node, b: Node): boolean {
-  let current = a
-  while (current.nextSibling) {
-    current = current.nextSibling
-    if (current === b) return true
-  }
-  return false
+  return null
 }
 
 function isHiddenElement(el: HTMLElement): boolean {

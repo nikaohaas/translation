@@ -7,20 +7,21 @@ const TRANSLATION_CLASS = 'bilingual-translation'
 const SEPARATOR_CLASS = 'bilingual-separator'
 
 export function renderTranslation(block: TextBlock, chunk: TextChunk, translatedText: string) {
+  const container = block.parentElement
+
   // Create wrapper if it doesn't exist
-  let wrapper = block.parentElement.querySelector(`.${WRAPPER_CLASS}`) as HTMLElement
+  let wrapper = container.querySelector(`.${WRAPPER_CLASS}`) as HTMLElement
 
   if (!wrapper) {
     wrapper = document.createElement('div')
     wrapper.className = WRAPPER_CLASS
 
-    // Wrap original content
+    // Save the original inner HTML
     const originalSpan = document.createElement('span')
     originalSpan.className = ORIGINAL_CLASS
-
-    // Move all child nodes into the original span
-    while (block.parentElement.firstChild) {
-      originalSpan.appendChild(block.parentElement.firstChild)
+    // Move all child nodes from the container into the original span
+    while (container.firstChild) {
+      originalSpan.appendChild(container.firstChild)
     }
 
     wrapper.appendChild(originalSpan)
@@ -37,7 +38,7 @@ export function renderTranslation(block: TextBlock, chunk: TextChunk, translated
     translationSpan.textContent = translatedText
     wrapper.appendChild(translationSpan)
 
-    block.parentElement.appendChild(wrapper)
+    container.appendChild(wrapper)
   } else {
     // Update existing translation (for incremental chunks)
     const translationSpan = wrapper.querySelector(`.${TRANSLATION_CLASS}`)
@@ -49,8 +50,9 @@ export function renderTranslation(block: TextBlock, chunk: TextChunk, translated
 }
 
 export function renderError(block: TextBlock, errorMessage: string) {
+  const container = block.parentElement
   // Don't add error if wrapper already exists
-  if (block.parentElement.querySelector(`.${WRAPPER_CLASS}`)) return
+  if (container.querySelector(`.${WRAPPER_CLASS}`)) return
 
   const wrapper = document.createElement('div')
   wrapper.className = WRAPPER_CLASS
@@ -59,8 +61,8 @@ export function renderError(block: TextBlock, errorMessage: string) {
 
   const originalSpan = document.createElement('span')
   originalSpan.className = ORIGINAL_CLASS
-  while (block.parentElement.firstChild) {
-    originalSpan.appendChild(block.parentElement.firstChild)
+  while (container.firstChild) {
+    originalSpan.appendChild(container.firstChild)
   }
   wrapper.appendChild(originalSpan)
 
@@ -71,5 +73,5 @@ export function renderError(block: TextBlock, errorMessage: string) {
   errorSpan.textContent = `⚠️ ${errorMessage}`
   wrapper.appendChild(errorSpan)
 
-  block.parentElement.appendChild(wrapper)
+  container.appendChild(wrapper)
 }

@@ -6,10 +6,12 @@ import { sendTranslateRequest } from '../shared/messages'
 import { getSettings } from '../shared/storage'
 
 export async function translatePage(blocks: TextBlock[]) {
-  const settings = await getSettings()
-  if (!settings.enabled) return
+  // Manual mode — translation only triggers on explicit user action.
+  // The caller (content.ts) decides when to call this function.
 
+  const settings = await getSettings()
   const engine = settings.engine
+
   const allChunks: { chunk: TextChunk; block: TextBlock }[] = []
 
   for (const block of blocks) {
@@ -23,8 +25,6 @@ export async function translatePage(blocks: TextBlock[]) {
 
   if (allChunks.length === 0) return
 
-  // Translate chunks with the engine
-  // Group chunks into batches for efficiency
   const batchSize = 5
 
   for (let i = 0; i < allChunks.length; i += batchSize) {
@@ -53,7 +53,6 @@ export async function translatePage(blocks: TextBlock[]) {
       }
     })
 
-    // Process batch concurrently but with rate limiting through the queue
     await Promise.all(promises)
   }
 }
