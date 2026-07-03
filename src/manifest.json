@@ -1,0 +1,42 @@
+{
+  "manifest_version": 3,
+  "name": "双语对照翻译",
+  "version": "1.0.0",
+  "description": "英文网页翻译为中文，段落对照显示，支持多翻译引擎切换",
+  "icons": {
+    "16": "public/icons/icon16.svg",
+    "48": "public/icons/icon48.svg",
+    "128": "public/icons/icon128.svg"
+  },
+  "action": {
+    "default_popup": "src/entrypoints/popup/index.html",
+    "default_icon": {
+      "16": "public/icons/icon16.svg",
+      "48": "public/icons/icon48.svg",
+      "128": "public/icons/icon128.svg"
+    }
+  },
+  "options_page": "src/entrypoints/options/index.html",
+  "background": {
+    "service_worker": "src/entrypoints/background.ts",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/entrypoints/content.ts"],
+      "css": ["src/styles/content.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "permissions": [
+    "storage",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://api.deepseek.com/*",
+    "https://api.anthropic.com/*",
+    "https://api.cognitive.microsofttranslator.com/*",
+    "https://api.translate.baidu.com/*"
+  ]
+}

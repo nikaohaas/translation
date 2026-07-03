@@ -1,0 +1,55 @@
+.bilingual-translation-wrapper {
+  display: block;
+  margin: 4px 0;
+  padding: 4px;
+  border-left: 3px solid #4A90D9;
+  background: rgba(74, 144, 217, 0.05);
+  border-radius: 2px;
+}
+
+.bilingual-original {
+  display: block;
+  color: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.bilingual-separator {
+  display: block;
+  color: #4A90D9;
+  font-size: 12px;
+  line-height: 1.5;
+  opacity: 0.6;
+  margin: 2px 0;
+}
+
+.bilingual-translation {
+  display: block;
+  color: #333;
+  font-size: inherit;
+  line-height: 1.6;
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  .bilingual-translation-wrapper {
+    border-left-color: #6BB3F0;
+    background: rgba(107, 179, 240, 0.08);
+  }
+
+  .bilingual-separator {
+    color: #6BB3F0;
+  }
+
+  .bilingual-translation {
+    color: #ccc;
+  }
+}
+
+/* Print support */
+@media print {
+  .bilingual-separator,
+  .bilingual-translation {
+    display: none;
+  }
+}
