@@ -12,13 +12,29 @@ async function startTranslation() {
   startObserving()
 }
 
+function removeTranslation() {
+  console.log('[Translation] Removing all translations')
+  stopObserving()
+  // Remove all translation wrappers and restore original content
+  document.querySelectorAll('.bilingual-translation-wrapper').forEach((wrapper) => {
+    const original = wrapper.querySelector('.bilingual-original')
+    if (original && original.parentElement === wrapper) {
+      // Move original children back to the parent element
+      while (original.firstChild) {
+        wrapper.parentElement?.insertBefore(original.firstChild, wrapper)
+      }
+    }
+    wrapper.remove()
+  })
+}
+
 // Listen for toggle messages from popup
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === 'TOGGLE_TRANSLATION') {
     if (message.payload?.enabled) {
       startTranslation()
     } else {
-      stopObserving()
+      removeTranslation()
     }
     sendResponse({ success: true })
     return true
