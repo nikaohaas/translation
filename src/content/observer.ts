@@ -1,12 +1,19 @@
 import { extractTextBlocks } from './text-extractor'
 import { translatePage } from './translator'
-import { getSettings } from '../shared/storage'
 
 let observer: MutationObserver | null = null
 let debounceTimer: number | null = null
 let periodicTimer: number | null = null
 
+/** Set to true after manual translation, so observer can translate new content. */
+let translationActive = false
+
+export function isTranslationActive() {
+  return translationActive
+}
+
 export function startObserving() {
+  translationActive = true
   if (observer) return
 
   observer = new MutationObserver((mutations) => {
@@ -39,7 +46,6 @@ export function startObserving() {
   })
 
   // Periodic scan for content that MutationObserver might miss
-  // (e.g., content revealed by expanding <details> in SPAs)
   startPeriodicScan()
 }
 
@@ -55,8 +61,8 @@ function startPeriodicScan() {
       return
     }
 
-    const settings = await getSettings()
-    if (!settings.enabled) return
+    // Manual mode — translateActive reflects user's last action
+    if (!translationActive) return
 
     const blocks = extractTextBlocks(document.body)
     if (blocks.length > 0) {
@@ -71,8 +77,7 @@ function debounceProcessPage() {
   }
 
   debounceTimer = window.setTimeout(async () => {
-    const settings = await getSettings()
-    if (!settings.enabled) return
+    if (!translationActive) return
 
     const blocks = extractTextBlocks(document.body)
     if (blocks.length > 0) {
@@ -82,6 +87,7 @@ function debounceProcessPage() {
 }
 
 export function stopObserving() {
+  translationActive = false
   if (observer) {
     observer.disconnect()
     observer = null

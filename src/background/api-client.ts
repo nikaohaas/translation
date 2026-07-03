@@ -7,10 +7,11 @@ interface QueueItem {
   reject: (error: Error) => void
 }
 
+const API_TIMEOUT = 30000 // 30s per request
+
 class RequestQueue {
   private queue: QueueItem[] = []
-  private processing = false
-  private maxConcurrent = 3
+  private maxConcurrent = 6
   private activeCount = 0
 
   enqueue(request: TranslationRequest): Promise<TranslationResponse> {
@@ -20,14 +21,15 @@ class RequestQueue {
     })
   }
 
-  private async processNext() {
-    if (this.processing || this.activeCount >= this.maxConcurrent) return
-    if (this.queue.length === 0) return
+  private processNext() {
+    while (this.queue.length > 0 && this.activeCount < this.maxConcurrent) {
+      const item = this.queue.shift()!
+      this.activeCount++
+      this.executeItem(item)
+    }
+  }
 
-    this.processing = true
-    const item = this.queue.shift()!
-    this.activeCount++
-
+  private async executeItem(item: QueueItem) {
     try {
       const response = await translateWithEngine(item.request)
       item.resolve(response)
@@ -35,13 +37,23 @@ class RequestQueue {
       item.reject(error instanceof Error ? error : new Error(String(error)))
     } finally {
       this.activeCount--
-      this.processing = false
       this.processNext()
     }
   }
 }
 
 export const requestQueue = new RequestQueue()
+
+/** fetch with a timeout (AbortController). */
+async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = API_TIMEOUT): Promise<Response> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    return await fetch(url, { ...options, signal: controller.signal })
+  } finally {
+    clearTimeout(timer)
+  }
+}
 
 async function translateWithEngine(request: TranslationRequest): Promise<TranslationResponse> {
   const { text, engine } = request
@@ -72,7 +84,7 @@ async function translateDeepSeek(request: TranslationRequest): Promise<Translati
     return { id: request.id, translatedText: '', engine: 'deepseek', success: false, error: '请先配置 DeepSeek API Key' }
   }
 
-  const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
+  const response = await fetchWithTimeout('https://api.deepseek.com/v1/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -111,7 +123,7 @@ async function translateClaude(request: TranslationRequest): Promise<Translation
     return { id: request.id, translatedText: '', engine: 'claude', success: false, error: '请先配置 Claude API Key' }
   }
 
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
+  const response = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -144,7 +156,7 @@ async function translateAzure(request: TranslationRequest): Promise<TranslationR
     return { id: request.id, translatedText: '', engine: 'azure', success: false, error: '请先配置 Azure Translator API Key' }
   }
 
-  const response = await fetch(
+  const response = await fetchWithTimeout(
     `https://api.cognitive.microsofttranslator.com/translate?api-version=3.0&from=en&to=zh-Hans`,
     {
       method: 'POST',
@@ -172,7 +184,6 @@ async function translateBaidu(request: TranslationRequest): Promise<TranslationR
     return { id: request.id, translatedText: '', engine: 'baidu', success: false, error: '请先配置百度翻译 API Key' }
   }
 
-  // Baidu requires appid + key + salt + sign
   const appid = apiKey.split(':')[0] || apiKey
   const secretKey = apiKey.split(':')[1] || apiKey
   const salt = Date.now()
@@ -188,7 +199,7 @@ async function translateBaidu(request: TranslationRequest): Promise<TranslationR
     sign,
   })
 
-  const response = await fetch(`https://fanyi-api.baidu.com/api/trans/vip/translate?${params}`)
+  const response = await fetchWithTimeout(`https://fanyi-api.baidu.com/api/trans/vip/translate?${params}`)
 
   if (!response.ok) {
     const error = await response.text()
@@ -238,12 +249,11 @@ async function translateCustom(request: TranslationRequest): Promise<Translation
       temperature: 0.3,
     }
 
-    // Only add model if user specified one
     if (model) {
       bodyObj.model = model
     }
 
-    const response = await fetch(apiUrl, {
+    const response = await fetchWithTimeout(apiUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -265,7 +275,6 @@ async function translateCustom(request: TranslationRequest): Promise<Translation
     }
 
     const data = await response.json()
-    // Handle both OpenAI format and Ollama format
     const translatedText = data.choices?.[0]?.message?.content?.trim()
       || data.response?.trim()
       || ''
